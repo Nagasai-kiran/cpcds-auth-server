@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/debug")
 public class DebugEndpoint {
 
-    private static final Logger logger = ServerLogger.getLogger();
+    private static final Logger logger = Logger.getLogger(DebugEndpoint.class.getName());
 
     @GetMapping("/Users")
     public ResponseEntity<String> getUsers() {
@@ -49,14 +49,14 @@ public class DebugEndpoint {
             String log = new String(Files.readAllBytes(Paths.get(ServerLogger.getLogPath())));
             return new ResponseEntity<>(log, HttpStatus.OK);
         } catch (IOException e) {
-            logger.log(Level.SEVERE, "DebugEndpoint::Log:IOException", e);
+            logger.log(Level.SEVERE, "Log:IOException", e);
             return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
         }
     }
 
     @RequestMapping(value = "/register/client", method = RequestMethod.POST, consumes = { "application/json" })
     public ResponseEntity<String> RegisterClient(HttpServletRequest request, HttpEntity<String> entity) {
-        logger.info("DebugEndpoint::DebugRegister: /register/client");
+        logger.info("/register/client");
         logger.log(Level.FINE, StringEscapeUtils.escapeJava(entity.getBody()));
 
         try {
@@ -68,7 +68,7 @@ public class DebugEndpoint {
         else
             return new ResponseEntity<String>(HttpStatus.BAD_REQUEST);
         } catch(JsonSyntaxException e) {
-            logger.log(Level.SEVERE, "DebugEndpoint::RegisterUser:Unable to parse body", e);
+            logger.log(Level.SEVERE, "Unable to parse body", e);
             return new ResponseEntity<String>(HttpStatus.BAD_REQUEST);
         }
     }

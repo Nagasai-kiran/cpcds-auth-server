@@ -34,7 +34,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 @Controller
 public class AuthorizationEndpoint {
 
-  private static final Logger logger = ServerLogger.getLogger();
+  private static final Logger logger = Logger.getLogger(AuthorizationEndpoint.class.getName());
 
   @RequestMapping(value = "/authorization", params = { "response_type", "client_id", "redirect_uri", "scope", "state",
       "aud" })
@@ -51,7 +51,7 @@ public class AuthorizationEndpoint {
     responseType = StringEscapeUtils.escapeJava(responseType);
 
     logger.info(
-        "AuthorizationEndpoint::Authorization:Received /authorization?response_type=" + responseType + "&client_id="
+    "Received /authorization?response_type=" + responseType + "&client_id="
             + clientId + "&redirect_uri=" + redirectURI + "&scope=" + scope + "&state=" + state + "&aud=" + aud);
 
     return "login";
@@ -72,9 +72,10 @@ public class AuthorizationEndpoint {
     responseType = StringEscapeUtils.escapeJava(responseType);
 
     logger.info(
-        "AuthorizationEndpoint::Authorization:Received /authorization?response_type=" + responseType + "&client_id="
+        "Received /authorization?response_type=" + responseType + "&client_id="
             + clientId + "&redirect_uri=" + redirectURI + "&scope=" + scope + "&state=" + state + "&aud=" + aud);
     final String baseUrl = App.getServiceBaseUrl(request);
+    logger.fine("baseURL=" + baseUrl);
     Gson gson = new GsonBuilder().setPrettyPrinting().create();
     HashMap<String, String> attributes = new HashMap<String, String>();
 
@@ -93,17 +94,17 @@ public class AuthorizationEndpoint {
       attributes.put("error_description", "client is not registered");
     } else {
       User userRequest = gson.fromJson(entity.getBody(), User.class);
-      logger.info("AuthorizationEndpoint::Authorization:Received login request from " + userRequest.getUsername());
+      logger.info("Received login request from " + userRequest.getUsername());
       User user = App.getDB().readUser(userRequest.getUsername());
       if (user == null) {
         status = HttpStatus.BAD_REQUEST;
         attributes.put("error", "access_denied");
         attributes.put("error_description", "user does not exist");
       } else if (BCrypt.checkpw(userRequest.getPassword(), user.getPassword())) {
-        logger.info("AuthorizationEndpoint::User " + user.getUsername() + " is authorized");
+        logger.info("User " + user.getUsername() + " is authorized");
 
         String code = generateAuthorizationCode(baseUrl, clientId, redirectURI, user.getUsername());
-        logger.info("AuthorizationEndpoint::Generated code " + code);
+        logger.info("Generated code " + code);
         if (code == null) {
           status = HttpStatus.INTERNAL_SERVER_ERROR;
           attributes.put("error", "server_error");
@@ -115,7 +116,7 @@ public class AuthorizationEndpoint {
         status = HttpStatus.UNAUTHORIZED;
         attributes.put("error", "access_denied");
         attributes.put("error_description", "invalid username/password");
-        logger.severe("AuthorizationEndpoint::Authorization:Failed loging attempt from " + user.getUsername());
+        logger.severe("Failed loging attempt from " + user.getUsername());
       }
     }
 
@@ -144,7 +145,7 @@ public class AuthorizationEndpoint {
     } catch (JWTCreationException exception) {
       // Invalid Signing configuration / Couldn't convert Claims.
       logger.log(Level.SEVERE,
-          "AuthorizationEndpoint::generateAuthorizationCode:Unable to generate code for " + clientId, exception);
+          "Unable to generate code for " + clientId, exception);
       return null;
     }
   }

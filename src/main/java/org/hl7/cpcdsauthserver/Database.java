@@ -20,7 +20,7 @@ import java.sql.ResultSetMetaData;
  */
 public class Database {
 
-    private static final Logger logger = ServerLogger.getLogger();
+    private static final Logger logger = Logger.getLogger(Database.class.getName());
 
     private String SQL_FILE;
     private static final String CREATE_SQL_FILE = "src/main/java/org/hl7/cpcdsauthserver/CreateDatabase.sql";

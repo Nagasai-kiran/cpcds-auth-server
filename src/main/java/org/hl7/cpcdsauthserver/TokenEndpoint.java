@@ -44,7 +44,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/token")
 public class TokenEndpoint {
 
-    private static final Logger logger = ServerLogger.getLogger();
+    private static final Logger logger = Logger.getLogger(TokenEndpoint.class.getName());
 
     /**
      * Enum for types of tokens
@@ -61,7 +61,7 @@ public class TokenEndpoint {
         grantType = StringEscapeUtils.escapeJava(grantType);
         redirectURI = StringEscapeUtils.escapeJava(redirectURI);
 
-        logger.info("TokenEndpoint::Token:Received request /token?grant_type=" + grantType + "&code=" + code
+        logger.info("Received request /token?grant_type=" + grantType + "&code=" + code
                 + "&redirect_uri=" + redirectURI);
         return processRequest(request, grantType, code, redirectURI);
     }
@@ -73,7 +73,7 @@ public class TokenEndpoint {
         grantType = StringEscapeUtils.escapeJava(grantType);
         refreshToken = StringEscapeUtils.escapeJava(refreshToken);
 
-        logger.info("TokenEndpoint::RefreshToken:Received request /token?grant_type=" + grantType + "&refresh_token="
+        logger.info("Received request /token?grant_type=" + grantType + "&refresh_token="
                 + refreshToken);
         return processRequest(request, grantType, refreshToken, null);
     }
@@ -89,9 +89,11 @@ public class TokenEndpoint {
         Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
         String baseUrl = App.getServiceBaseUrl(request);
+        logger.fine("baseURL=" + baseUrl);
 
         // Validate the client is authorized
         String clientId = clientIsAuthorized(request);
+        // String clientId = request.getParameter("client_id");
         if (clientId == null) {
             response.put("error", "invalid_client");
             response.put("error-description",
@@ -107,17 +109,20 @@ public class TokenEndpoint {
         } else if (grantType.equals("refresh_token")) {
             // Request is to trade refresh_token for access token
             patientId = refreshTokenIsValid(token, baseUrl, clientId);
+        } else if (grantType.equals("client_credentials")) {
+            // Request is a machine to machine request, so just verify the client id/secret
+            patientId = "admin";
         } else {
             response.put("error", "invalid_request");
             response.put("error_description", "grant_type must be authorization_code not " + grantType);
             return new ResponseEntity<String>(gson.toJson(response), headers, HttpStatus.BAD_REQUEST);
         }
+        logger.log(Level.FINE, "patientId=" + patientId);
 
-        logger.log(Level.FINE, "TokenEndpoint::Token:Patient:" + patientId);
         if (patientId != null) {
             String accessToken = generateToken(token, baseUrl, clientId, patientId, UUID.randomUUID().toString(),
                     TokenType.ACCESS, request);
-            logger.log(Level.FINE, "TokenEndpoint::Token:Generated token " + accessToken);
+            logger.log(Level.FINE, "Generated token " + accessToken);
             if (accessToken != null) {
                 String jwtId = UUID.randomUUID().toString();
                 response.put("access_token", accessToken);
@@ -150,7 +155,8 @@ public class TokenEndpoint {
      */
     private String clientIsAuthorized(HttpServletRequest request) {
         String authHeader = request.getHeader("Authorization");
-        logger.log(Level.FINE, "TokenEndpoint::AuthHeader:" + authHeader);
+        logger.log(Level.INFO, "AuthHeader=" + authHeader);
+        String clientId = null;
         if (authHeader != null) {
             String regex = "Basic (.*)";
             Pattern pattern = Pattern.compile(regex);
@@ -161,18 +167,24 @@ public class TokenEndpoint {
                 Pattern clientAuthPattern = Pattern.compile(clientAuthRegex);
                 Matcher clientAuthMatcher = clientAuthPattern.matcher(clientAuthorization);
                 if (clientAuthMatcher.find() && clientAuthMatcher.groupCount() == 2) {
-                    String clientId = clientAuthMatcher.group(1);
+                    clientId = clientAuthMatcher.group(1);
                     String clientSecret = clientAuthMatcher.group(2);
-                    logger.log(Level.FINE, "TokenEndpoint::client:" + clientId + "(" + clientSecret + ")");
+                    logger.log(Level.FINE, "client:" + clientId + "(" + clientSecret + ")");
                     if (Client.getClient(clientId).validateSecret(clientSecret)) {
-                        logger.info("TokenEndpoint::clientIsAuthorized:" + clientId);
-                        return clientId;
+                        logger.info("clientIsAuthorized:" + clientId);
                     }
                 }
             }
         }
-        logger.info("TokenEndpoint::clientIsAuthorized:false");
-        return null;
+        else {
+            clientId = request.getParameter("client_id");
+        }
+        
+        if (clientId == null) {
+            logger.info("clientIsAuthorized:false");
+        }
+        logger.fine("clientIsAuthorized:client_id=" + clientId);
+        return clientId;
     }
 
     /**
@@ -193,6 +205,7 @@ public class TokenEndpoint {
             // Create the access token JWT
             Algorithm algorithm = Algorithm.RSA256(App.getPublicKey(), App.getPrivateKey());
             String aud = tokenType == TokenType.ACCESS ? App.getEhrServer(request) : baseUrl;
+            logger.fine("generateToken aud=" + aud);
             Instant exp = tokenType == TokenType.ACCESS
                     ? LocalDateTime.now().plusHours(1).atZone(ZoneId.systemDefault()).toInstant()
                     : LocalDateTime.now().plusDays(30).atZone(ZoneId.systemDefault()).toInstant();
@@ -201,11 +214,11 @@ public class TokenEndpoint {
                     .withClaim("patient_id", patientId).withJWTId(jwtId).sign(algorithm);
         } catch (JWTCreationException exception) {
             // Invalid Signing configuration / Couldn't convert Claims.
-            logger.log(Level.SEVERE, "TokenEndpoint::generateToken:Unable to generate token", exception);
+            logger.log(Level.SEVERE, "generateToken:Unable to generate token", exception);
             return null;
         } catch (JWTVerificationException exception) {
             // Invalid code
-            logger.log(Level.SEVERE, "TokenEndpoint::generateToken:Unable to verify code", exception);
+            logger.log(Level.SEVERE, "generateToken:Unable to verify code", exception);
             return null;
         }
     }
@@ -221,6 +234,9 @@ public class TokenEndpoint {
     private String authCodeIsValid(String code, String baseUrl, String redirectURI, String clientId) {
         String patientId = null;
         try {
+            logger.log(Level.FINE, "code=" + code);
+            logger.log(Level.FINE, "clientId=" + clientId);
+            logger.log(Level.FINE, "aud and iss will be compared to baseUrl=" + baseUrl);
             Algorithm algorithm = Algorithm.RSA256(App.getPublicKey(), null);
             JWTVerifier verifier = JWT.require(algorithm).withIssuer(baseUrl).withAudience(baseUrl)
                     .withClaim("redirect_uri", redirectURI).build();
@@ -228,19 +244,19 @@ public class TokenEndpoint {
             String jwtClientId = jwt.getClaim("client_id").asString();
             if (!clientId.equals(jwtClientId)) {
                 logger.warning(
-                        "TokenEndpoint::Authorization code is invalid. Client ID does not match authorization header");
+                        "Authorization code is invalid. Client ID does not match authorization header");
             } else {
                 String username = jwt.getClaim("username").asString();
                 patientId = User.getUser(username).getPatientId();
             }
         } catch (SignatureVerificationException exception) {
-            logger.log(Level.SEVERE, "TokenEndpoint::Authorization code is invalid. Signature invalid");
+            logger.log(Level.SEVERE, "Authorization code Signature is invalid: " + exception.getMessage());
         } catch (TokenExpiredException exception) {
-            logger.log(Level.SEVERE, "TokenEndpoint::Authorization code is invalid. Token expired");
+            logger.log(Level.SEVERE, "Authorization code Token has expired:" + exception.getMessage());
         } catch (JWTVerificationException exception) {
-            logger.log(Level.SEVERE, "TokenEndpoint::Authorization code is invalid. Please obtain a new code",
-                    exception);
+            logger.log(Level.SEVERE, "Authorization code failed verification:" + exception.getMessage());
         }
+        logger.log(Level.FINE, "patientId=" + patientId);
         return patientId;
     }
 
@@ -261,17 +277,17 @@ public class TokenEndpoint {
             String jwtClientId = jwt.getClaim("client_id").asString();
             if (!clientId.equals(jwtClientId)) {
                 logger.warning(
-                        "TokenEndpoint::Refresh token is invalid. Client ID does not match authorization header");
+                        "Refresh token is invalid. Client ID does not match authorization header");
                 return null;
             }
 
             patientId = jwt.getClaim("patient_id").asString();
             if (!jwtId.equals(App.getDB().readRefreshToken(patientId))) {
-                logger.warning("TokenEndpoint::Refresh token is invalid. Please reauthorize");
+                logger.warning("Refresh token is invalid. Please reauthorize");
                 return null;
             }
         } catch (JWTVerificationException exception) {
-            logger.log(Level.SEVERE, "TokenEndpoint::Refresh token is invalid. Please reauthorize", exception);
+            logger.log(Level.SEVERE, "Refresh token is invalid. Please reauthorize", exception);
         }
         return patientId;
     }
